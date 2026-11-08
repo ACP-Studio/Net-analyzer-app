@@ -1,13 +1,6 @@
 # NetAnalyzer
 
-A small, dependency-free network analyzer written in C++17. It measures latency, checks whether your devices are reachable, lists everything on your local network, and tracks your phones as their IP addresses change. All results are saved to CSV files.
-
-It comes in two parts that share one engine:
-
-| File | What it is | Platforms |
-|------|-----------|-----------|
-| `netanalyzer.cpp` | Command-line tool **and** the shared engine (all the networking logic) | Windows + Linux |
-| `netanalyzer_gui.cpp` | Windows GUI (tabbed window) that `#include`s `netanalyzer.cpp` | Windows only |
+A small, dependency-free command-line network analyzer written in C++17 for Windows and Linux. It measures latency, checks whether your devices are reachable, lists everything on your local network, and tracks your phones as their IP addresses change. All results are saved to CSV files.
 
 No administrator/root rights are needed.
 
@@ -27,25 +20,19 @@ No administrator/root rights are needed.
 
 ## Build
 
-### Linux (CLI)
+### Linux
 ```bash
 g++ -std=c++17 -O2 -Wall -Wextra -pthread -o netanalyzer netanalyzer.cpp
 ```
 
-### Windows (CLI), MSYS2 MinGW-w64
+### Windows (MSYS2 MinGW-w64)
 ```bash
 g++ -std=c++17 -O2 -Wall -Wextra -static -o netanalyzer.exe netanalyzer.cpp -liphlpapi -lws2_32
 ```
 
-### Windows (GUI)
-Both `.cpp` files must be in the same folder. **Compile only the GUI file.** It includes the engine itself.
-```bash
-g++ -std=c++17 -O2 -Wall -Wextra -static -mwindows -o netanalyzer_gui.exe netanalyzer_gui.cpp -liphlpapi -lws2_32 -lgdi32 -lshell32
-```
-
 ---
 
-## Usage (CLI)
+## Usage
 
 ```
 netanalyzer <command> [options]
@@ -94,23 +81,6 @@ netanalyzer track --every 60
 
 ---
 
-## The GUI
-
-Tabs: **Overview · Ping · Devices · Scan · Phones · Logs**
-
-| Tab | What it does |
-|-----|--------------|
-| **Overview** | Hostname, gateway, DNS, and a table of adapters. Refresh button. |
-| **Ping** | Host, count, interval, optional TCP port. Shows a **live latency graph** plus a per-probe table and running summary. |
-| **Devices** | Add/remove devices, run a test now, or auto-repeat (minimum 10 s). Rows are colour-coded by status. |
-| **Scan** | Scans the network. Select a row, type a name, and click **Track selected as phone** to add it to the Phones tab. |
-| **Phones** | Add/remove phones by MAC, check now, or auto-repeat (minimum 20 s). Colour-coded events. |
-| **Logs** | Browse any of the CSV logs in a table, with a button to open the logs folder. |
-
-Settings (`devices.conf`, `phones.conf`) and the `netlogs` folder live **next to the `.exe`**. You can start on a specific tab with `netanalyzer_gui.exe --tab 3`.
-
----
-
 ## Configuration files
 
 ### `devices.conf`
@@ -136,20 +106,7 @@ Use the MAC your phone uses **for this Wi-Fi network** (Settings → Wi-Fi → n
 
 ## How it works
 
-### Architecture
-
-```
-netanalyzer.cpp  ── engine ─────────────────────────────┐
-  ├─ system info   (adapters, gateway, DNS)              │  used directly by the CLI (main)
-  ├─ probes        (ICMP / TCP latency)                  │
-  ├─ ARP discovery (subnet sweep + ARP table)            │  and #included by
-  ├─ analysis      (stats, classification, trends)       │
-  └─ CSV logging                                         │  netanalyzer_gui.cpp  ── Win32 UI
-                                                         ┘  (defines NETANALYZER_NO_MAIN to
-                                                             drop the CLI main())
-```
-
-Platform differences are isolated with `#ifdef _WIN32`, so every command behaves the same on both systems.
+Platform differences are isolated with `#ifdef _WIN32`, so every command behaves the same on Windows and Linux.
 
 ### 1. System info (`info`)
 - **Windows:** `GetAdaptersAddresses` (adapters, IPs, DNS, MAC), `GetIfEntry2` (traffic counters), `GetBestRoute` toward `1.1.1.1` (default gateway).
@@ -211,7 +168,7 @@ Phones change IP addresses (DHCP), but their MAC stays the same for a given Wi-F
 4. For online phones it also does a quick 3-probe ping. "No reply" is normal because many sleeping phones ignore ping, while ARP still proves they're present.
 
 ### 6. Logging
-`appendLog` creates `netlogs/` if needed, writes a header the first time a file is created, then appends one row per result. Commas and newlines in values are replaced with spaces to keep the CSV valid.
+Each command creates `netlogs/` if needed, writes a header the first time a file is created, then appends one row per result. Commas and newlines in values are replaced with spaces to keep the CSV valid.
 
 | File | Written by | Contents |
 |------|-----------|----------|
@@ -220,15 +177,6 @@ Phones change IP addresses (DHCP), but their MAC stays the same for a given Wi-F
 | `device_stats.csv` | `test` | Per-device stats, status, notes |
 | `network_scan.csv` | `scan` | IP, MAC, hostname, randomized flag |
 | `phone_tracking.csv` | `track` | Status, IP, previous IP, event, latency |
-
-### 7. GUI internals
-- **Win32 API only:** native tab control, list views, status bar, a custom-painted graph control, DPI scaling, and Common Controls v6 styling (a manifest is activated at runtime).
-- **One background job at a time:** `beginJob` / `endJob` use an atomic flag so scans and tests never overlap. Work runs on a worker `std::thread`.
-- **Thread safety:** worker threads never touch the UI directly. They call `ui(fn)`, which posts the closure to the main window as a `WM_UI_CALL` message, and it runs on the UI thread.
-- **Stop button:** sets the shared `g_stop` flag that the engine checks between probes (the same flag Ctrl+C sets in the CLI).
-- **Auto-repeat:** Windows timers (`SetTimer`) re-run the device test or phone check.
-- **Layout:** each control stores its position in unscaled pixels (negative values anchor to the far edge) and is rescaled on resize or DPI change.
-- **Enter key:** pressing Enter in a text box triggers the page's main action.
 
 ---
 
